@@ -1,14 +1,19 @@
 # Stream Subs 🎙️
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)]()
+[![CUDA](https://img.shields.io/badge/CUDA-Supported-green.svg)](https://developer.nvidia.com/cuda-zone)
+
 **Локальные субтитры RU→EN для стримов на Whisper + CUDA**
 
 [🇬🇧 English version](README.en.md)
 
----
-
 **Stream Subs** — это локальное приложение для стримеров, которое в реальном времени переводит русскую речь в английские субтитры и выводит их поверх стрима в OBS или Streamlabs.
 
 **Всё работает на вашем компьютере**, без облачных сервисов, ежемесячных платежей и лимитов.
+
+Проект студии [TenLux](https://tenlux.tech).
 
 ---
 
@@ -27,17 +32,15 @@
 
 ## 📊 Что внутри
 
-~~~~
+```
 Микрофон → VAD → Whisper (ru→en) → WebSocket → Браузер → OBS/Streamlabs
-~~~~
+```
 
 - **VAD** (Voice Activity Detection) — Silero VAD для нарезки фраз
 - **Whisper** — модель `medium` через `faster-whisper` (CTranslate2 + CUDA)
 - **Веб-сервер** — FastAPI + WebSocket для передачи субтитров
 - **Внешний вид** — HTML + CSS + JS, поддерживает Google Fonts
 - **Установщик** — Inno Setup с bootstrap-загрузкой зависимостей
-
----
 
 ---
 
@@ -57,7 +60,7 @@
 
 ### Готовый установщик (рекомендуется)
 
-1. Скачайте **StreamSubsSetup.exe** со страницы [Releases](https://github.com/CJDARKLORD/Stream-Subs/releases/latest).
+1. Скачайте **StreamSubsSetup.exe** со страницы [Releases](https://github.com/TenLux-dev/Stream-Subs/releases/latest).
 2. Запустите установщик.
 3. Следуйте инструкциям. Установка занимает 1–2 минуты.
 4. **При первом запуске** программа скачает ~4 ГБ компонентов:
@@ -78,7 +81,7 @@
 
 Откройте терминал и выполните:
 
-- `git clone https://github.com/CJDARKLORD/Stream-Subs.git`
+- `git clone https://github.com/TenLux-dev/Stream-Subs.git`
 - `cd Stream-Subs`
 - `py -3.11 -m venv .venv`
 - `.venv\Scripts\activate`
@@ -107,7 +110,7 @@
 
 **3. Попросить автора собрать CPU-версию.**
 
-Если не хотите возиться со сборкой — создайте [Issue](https://github.com/CJDARKLORD/Stream-Subs/issues) с заголовком **«Request: CPU build»**. Автор выложит готовый CPU-инсталлятор в Releases, если наберётся достаточное количество запросов.
+Если не хотите возиться со сборкой — создайте [Issue](https://github.com/TenLux-dev/Stream-Subs/issues) с заголовком **«Request: CPU build»**. Автор выложит готовый CPU-инсталлятор в Releases, если наберётся достаточное количество запросов.
 
 ---
 
@@ -149,11 +152,11 @@
 
 Каждое распознавание пишется в `whisper_log.txt` рядом с exe:
 
-~~~~
+```
 [2026-09-26 21:34:11] [OK] len=2.31s whisper=0.42s 'Today we will play a new game.'
 [2026-09-26 21:34:18] [FILTERED] len=0.64s whisper=0.18s 'Fuck you'
 [2026-09-26 21:34:22] [EMPTY] len=0.91s whisper=0.31s ''
-~~~~
+```
 
 Это защищает вас: если платформа спросит, почему в эфире было что-то неподобающее, вы покажете файл — вот что вернул Whisper, вот что фильтр отсёк.
 
@@ -193,7 +196,7 @@ Stream Subs — бесплатный проект с открытым исход
 - 🎁 [**ODA Digital**](https://cjdarklord.oda.digital/) — альтернативный вариант
 - 💎 [**TON-кошелёк**](https://tonscan.org/address/UQC4_jNOa2xfv75n-95cluaN7P4HJ3Lk00b_p1xvn1tGDKYx) — открыть в tonscan и скопировать адрес
 - ❤️ [**GitHub Sponsors**](https://github.com/sponsors/CJDARKLORD) — подписка через GitHub
-- ⭐ [**Звезда на GitHub**](https://github.com/CJDARKLORD/Stream-Subs) — тоже поддержка
+- ⭐ [**Звезда на GitHub**](https://github.com/TenLux-dev/Stream-Subs) — тоже поддержка
 
 Каждая копейка идёт на развитие проекта: новые функции, тестирование, поддержка пользователей.
 
@@ -219,7 +222,9 @@ MIT License. См. файл [LICENSE](LICENSE).
 
 ## 📬 Контакты
 
-- **GitHub Issues:** [создать issue](https://github.com/CJDARKLORD/Stream-Subs/issues)
-- **Автор:** CJDARKLORD
+- **GitHub Issues:** [создать issue](https://github.com/TenLux-dev/Stream-Subs/issues)
+- **Telegram:** [@tenlux_dev](https://t.me/tenlux_dev)
+- **Сайт:** [tenlux.tech](https://tenlux.tech)
+- **Автор:** CJDARKLORD / TenLux
 
 Если проект помог — поставьте ⭐ звезду, это лучшая поддержка.
