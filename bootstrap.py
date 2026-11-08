@@ -15,6 +15,13 @@ import urllib.request
 import re
 from pathlib import Path
 
+# Не падаем на юникоде в cp866/cp1251 консолях / never crash on Unicode
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:
+        pass
+
 # Включаем ANSI цвета в Windows console
 # Enable ANSI colors in Windows console
 os.system("")
@@ -481,6 +488,19 @@ def download_models():
 #  Main / Главная
 # ------------------------------------------------------------
 
+def bar_demo():
+    """Show the progress bar without installing anything (dev/demo)."""
+    total = 120.0
+    import math
+    for i in range(0, 121):
+        done = total * i / 120.0
+        speed = 6.6 + 1.2 * math.sin(i / 8.0)
+        eta = 0 if i >= 120 else int((total - done) / max(speed, 0.1))
+        render_bar(done, total, f"{speed:.1f} MB/s  ETA 0:{eta:02d}")
+        time.sleep(0.03)
+    print()
+
+
 def main():
     print_banner()
     print(f"  {DIM}Python:{RESET} {CYAN}{PYTHON}{RESET}")
@@ -552,6 +572,9 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--bar-demo" in sys.argv:
+        bar_demo()
+        sys.exit(0)
     try:
         main()
     except Exception as e:
