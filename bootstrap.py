@@ -179,7 +179,7 @@ def human_mb(value):
 
 
 def render_bar(done, total, extra=""):
-    """Draw a single-line bar: pink fill on green track, adapts to console width."""
+    """Retro glyph bar: blocks if console supports them, ASCII fallback if not."""
     if not total or total <= 0:
         return
     import shutil
@@ -189,8 +189,31 @@ def render_bar(done, total, extra=""):
         term_w = 100
     width = max(12, min(34, term_w - 64))
     frac = max(0.0, min(1.0, done / total))
-    filled = int(frac * width)
-    bar = BAR_FILL + (" " * filled) + RESET + BAR_EMPTY + (" " * (width - filled)) + RESET
+    cells = frac * width
+    full = int(cells)
+    rest = cells - full
+
+    FULL, HALF, EMPTY = "\u2588", "\u2592", "\u2591"
+    enc = (getattr(sys.stdout, "encoding", None) or "utf-8")
+    try:
+        FULL.encode(enc)
+    except Exception:
+        FULL, HALF, EMPTY = "#", "+", "."
+
+    c_full = "\033[38;5;205m"   # pink
+    c_half = "\033[38;5;199m"   # dim pink
+    c_empty = "\033[38;5;22m"   # dark green
+
+    bar = c_full + (FULL * full)
+    if full < width:
+        if rest >= 0.5:
+            bar += c_half + HALF
+            filled = full + 1
+        else:
+            filled = full
+        bar += c_empty + (EMPTY * (width - filled))
+    bar += RESET
+
     pct = int(frac * 100)
     line = f"\r  {bar} {WHITE}{pct:3d}%{RESET}  {DIM}{human_mb(done):>9} / {human_mb(total):>9}{RESET}"
     if extra:
