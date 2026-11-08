@@ -195,9 +195,61 @@ PYTHON = get_python_executable()
 #  pip install with live output / pip с живым выводом
 # ------------------------------------------------------------
 
+def _norm_name(name):
+    return (name or "").lower().replace("-", "_").replace(".", "_")
+
+
+def report_sizes(pkg):
+    """Ask pip for the full dependency tree, then HEAD each wheel for size.
+
+    pi p 26+ больше не кладёт size в --report, поэтому берём Content-Length
+    у файла на files.pythonhosted.org. Ошибки/таймауты просто пропускаем:
+    тогда install_package покажет прогресс по текущему файлу.
+    """
+    report_path = None
+    try:
+        import tempfile
+        fd, report_path = tempfile.mkstemp(prefix="ssubs_report_", suffix=".json")
+        os.close(fd)
+        subprocess.run(
+            [PYTHON, "-m", "pip", "install", "--dry-run", "--quiet",
+             "--report", report_path, pkg],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=180,
+        )
+        with open(report_path, encoding="utf-8") as f:
+            data = json.loads(f.read().strip() or "{}")
+        sizes = {}
+        for item in data.get("install", []):
+            name = item.get("metadata", {}).get("name", "")
+            url = (item.get("download_info") or {}).get("url", "")
+            if not name or not url:
+                continue
+            try:
+                req = urllib.request.Request(url, method="HEAD")
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    length = resp.headers.get("Content-Length")
+                if length:
+                    sizes[_norm_name(name)] = int(length)
+            except Exception:
+                continue
+        return sizes
+    except Exception:
+        return {}
+    finally:
+        try:
+            if report_path:
+                os.remove(report_path)
+        except Exception:
+            pass
+
+
 def install_package(pkg, index=1, total=1):
     print()
     print(f"  {YELLOW}📦 [{index}/{total}]{RESET} {BOLD}{pkg}{RESET}")
+
+    sizes = report_sizes(pkg)
+    total_mb = (sum(sizes.values()) / 1048576.0) if sizes else 0.0
 
     proc = subprocess.Popen(
         [PYTHON, "-m", "pip", "install", "--progress-bar", "on", pkg],
@@ -207,18 +259,29 @@ def install_package(pkg, index=1, total=1):
     )
 
     buf = ""
-    cur_total = None
+    completed = 0.0
+    cur_name = None
+    cur_total = 0.0
     cur_done = 0.0
 
+    def file_size(name):
+        key = _norm_name(name.split("-")[0]) if name else ""
+        return float(sizes.get(key, 0.0)) / 1048576.0
+
     def on_seg(seg):
-        nonlocal cur_total, cur_done
+        nonlocal completed, cur_name, cur_total, cur_done
         seg = seg.strip()
         if not seg:
             return
         m = re.search(r"Downloading (\S+) \(([\d.]+) (MB|kB|GB)\)", seg)
         if m:
+            if cur_name:
+                completed += file_size(cur_name) or cur_total
+            cur_name = m.group(1)
             cur_total = to_mb(float(m.group(2)), m.group(3))
             cur_done = 0.0
+            if total_mb:
+                render_bar(completed, total_mb)
             return
         m = re.search(r"([\d.]+)/([\d.]+) (MB|kB|GB)", seg)
         if m:
@@ -228,10 +291,18 @@ def install_package(pkg, index=1, total=1):
             eta = re.search(r"eta (\S+)", seg)
             extra = ((speed.group(0) if speed else "") + "  " +
                      ("ETA " + eta.group(1) if eta else "")).strip()
-            render_bar(cur_done, tot, extra)
+            if total_mb:
+                done = completed + min(cur_done, file_size(cur_name) or tot)
+                render_bar(done, total_mb, extra)
+            else:
+                render_bar(cur_done, tot, extra)
             return
-        if ("Collecting " in seg or "Installing " in seg or
-                "Successfully installed" in seg or "Using cached" in seg):
+        if "Successfully installed" in seg:
+            if total_mb:
+                render_bar(total_mb, total_mb)
+            print(f"\r     {GREEN}{seg[:110]}{RESET}")
+            return
+        if ("Collecting " in seg or "Installing " in seg or "Using cached" in seg):
             print(f"\r     {DIM}{seg[:110]}{RESET}")
 
     while True:
