@@ -183,6 +183,12 @@
   <div class="row">
     <label>Время одного куска, мс / Time per chunk, ms</label>
     <input id="chunkTime" type="number" min="800" max="10000" step="100">
+
+  <div class="row">
+    <label>Прошлые строки / Previous lines (0-3)</label>
+    <input id="historyLines" type="number" min="0" max="3" step="1">
+    <div class="hint">Сколько предыдущих строк держать над текущей / How many previous lines to keep above the current one</div>
+  </div>
   </div>
 
   <!-- =================================================== -->
@@ -251,6 +257,7 @@
       timeout:        parseInt($('timeout').value),
       maxChars:       parseInt($('maxChars').value),
       chunkTime:      parseInt($('chunkTime').value),
+      historyLines:   parseInt($('historyLines').value),
       textShadow:     $('textShadow').value,
       testBackground: $('testBackground').value,
     };
@@ -272,6 +279,7 @@
     $('timeout').value        = c.timeout;
     $('maxChars').value       = c.maxChars;
     $('chunkTime').value      = c.chunkTime;
+    $('historyLines').value   = c.historyLines !== undefined ? c.historyLines : 1;
     $('textShadow').value     = c.textShadow;
     $('testBackground').value = c.testBackground;
   }
@@ -289,6 +297,7 @@
     if (c.bottom && c.bottom !== 80)      params.set('bottom', c.bottom);
     if (c.maxChars && c.maxChars !== 80)  params.set('chars', c.maxChars);
     if (c.chunkTime && c.chunkTime !== 2500) params.set('chunk', c.chunkTime);
+    if (c.historyLines !== undefined && c.historyLines !== 1) params.set('hist', c.historyLines);
     const qs = params.toString();
     $('urlBox').textContent = 'http://127.0.0.1:8000' + (qs ? '?' + qs : '');
   }

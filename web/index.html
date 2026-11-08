@@ -3,8 +3,10 @@
   Stream Subs — subtitle overlay page
   Stream Subs — страница субтитров (оверлей)
 
-  WebSocket feeds translated text. Page shows it with fade-out.
-  WebSocket передаёт переведённый текст. Страница показывает его с затуханием.
+  WebSocket feeds translated text. Page shows it with fade-out and keeps
+  the previous line visible above the current one.
+  WebSocket передаёт переведённый текст. Страница показывает его с затуханием
+  и держит предыдущую строку над текущей.
 
   All visual settings come from /api/config.
   Все визуальные настройки берутся из /api/config.
@@ -19,28 +21,46 @@
   html, body { margin:0; padding:0; background:transparent; overflow:hidden; height:100%; }
 
   /* Subtitle block / блок субтитров */
-  #subs {
+  #wrap {
     position: fixed; left: 50%; bottom: 80px;
     transform: translateX(-50%);
     max-width: 80%; text-align: center;
-    color: #ffffff; font-size: 42px; font-weight: 700; line-height: 1.25;
-    text-shadow: 0 0 8px #000, 0 0 4px #000, 2px 2px 4px #000;
     transition: opacity 0.25s ease;
-    opacity: 0; pointer-events: none; white-space: pre-wrap;
+    opacity: 0; pointer-events: none;
   }
-  #subs.visible { opacity: 1; }
+  #wrap.visible { opacity: 1; }
+  #subs {
+    color: #ffffff; font-size: 1em; font-weight: 700; line-height: 1.25;
+    text-shadow: 0 0 8px #000, 0 0 4px #000, 2px 2px 4px #000;
+    white-space: pre-wrap;
+  }
+  /* Previous line: smaller and dimmer / предыдущая строка: мельче и тусклее */
+  #prev {
+    color: #ffffff; font-size: 0.62em; font-weight: 600; line-height: 1.2;
+    text-shadow: 0 0 8px #000, 0 0 4px #000, 2px 2px 4px #000;
+    opacity: 0.72; white-space: pre-wrap;
+    margin-bottom: 0.35em;
+    min-height: 0;
+  }
+  #prev:empty { display: none; }
 </style>
 </head>
 <body>
-<div id="subs"></div>
+<div id="wrap">
+  <div id="prev"></div>
+  <div id="subs"></div>
+</div>
 <script>
   // URL params override / параметры URL переопределяют config.json
   const q = new URLSearchParams(location.search);
+  const wrap = document.getElementById('wrap');
   const el = document.getElementById('subs');
+  const prevEl = document.getElementById('prev');
 
   let HIDE_TIMEOUT = 6000;   // ms after last chunk / мс после последнего куска
   let CHUNK_TIME   = 2500;   // ms per chunk / мс на кусок
   let MAX_CHARS    = 80;     // max chars per chunk / максимум символов
+  let HISTORY_LINES = 1;     // how many previous lines to keep / сколько прошлых строк
 
   // --------------------------------------------------------
   //  Split long text into chunks by sentences / by words
@@ -77,6 +97,8 @@
   let chunkQueue = [];
   let activeTimer = null;
   let hideTimer = null;
+  let lastLine = '';
+  let prevLines = [];
 
   function enqueue(text) {
     const chunks = splitText(text, MAX_CHARS);
@@ -84,15 +106,27 @@
     if (!activeTimer) nextChunk();
   }
 
+  function renderPrev() {
+    prevEl.textContent = prevLines.join('\n');
+  }
+
   function nextChunk() {
     activeTimer = null;
     if (chunkQueue.length === 0) {
       if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => el.classList.remove('visible'), HIDE_TIMEOUT);
+      hideTimer = setTimeout(() => wrap.classList.remove('visible'), HIDE_TIMEOUT);
       return;
     }
-    el.textContent = chunkQueue.shift();
-    el.classList.add('visible');
+    const line = chunkQueue.shift();
+    // current line becomes previous one
+    if (lastLine) {
+      prevLines.push(lastLine);
+      while (prevLines.length > HISTORY_LINES) prevLines.shift();
+      renderPrev();
+    }
+    lastLine = line;
+    el.textContent = line;
+    wrap.classList.add('visible');
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
     activeTimer = setTimeout(nextChunk, CHUNK_TIME);
   }
@@ -109,22 +143,26 @@
         await document.fonts.load(cfg.fontWeight + ' 16px "' + cfg.googleFont + '"');
         await document.fonts.ready;
       } catch (e) { console.warn('font load failed / шрифт не загрузился', e); }
-      el.style.fontFamily = '"' + cfg.googleFont + '", sans-serif';
+      wrap.style.fontFamily = '"' + cfg.googleFont + '", sans-serif';
     } else {
-      el.style.fontFamily = cfg.fontFamily;
+      wrap.style.fontFamily = cfg.fontFamily;
     }
-    el.style.fontSize = cfg.fontSize + 'px';
+    wrap.style.fontSize = cfg.fontSize + 'px';
     el.style.fontWeight = cfg.fontWeight;
     el.style.color = cfg.color;
-    el.style.bottom = cfg.bottom + 'px';
-    el.style.maxWidth = cfg.maxWidth + '%';
+    prevEl.style.fontWeight = Math.max(400, (parseInt(cfg.fontWeight) || 700) - 100);
+    prevEl.style.color = cfg.color;
+    wrap.style.bottom = cfg.bottom + 'px';
+    wrap.style.maxWidth = cfg.maxWidth + '%';
     el.style.textShadow = cfg.textShadow;
+    prevEl.style.textShadow = cfg.textShadow;
     if (cfg.testBackground && cfg.testBackground !== 'transparent') {
       document.body.style.background = cfg.testBackground;
     }
     HIDE_TIMEOUT = parseInt(cfg.timeout) || 6000;
     CHUNK_TIME   = parseInt(cfg.chunkTime) || 2500;
     MAX_CHARS    = parseInt(cfg.maxChars) || 80;
+    if (cfg.historyLines !== undefined) HISTORY_LINES = Math.max(0, parseInt(cfg.historyLines) || 0);
   }
 
   // URL params override / URL-параметры имеют приоритет
@@ -133,12 +171,12 @@
       size:'fontSize', color:'color', bottom:'bottom',
       maxw:'maxWidth', timeout:'timeout', bg:'testBackground',
       shadow:'textShadow', family:'fontFamily', gfont:'googleFont',
-      chunk:'chunkTime', chars:'maxChars'
+      chunk:'chunkTime', chars:'maxChars', hist:'historyLines'
     };
     for (const [k, v] of q.entries()) {
       if (!map[k]) continue;
       const key = map[k];
-      if (['fontSize','bottom','maxWidth','timeout','chunkTime','maxChars'].includes(key))
+      if (['fontSize','bottom','maxWidth','timeout','chunkTime','maxChars','historyLines'].includes(key))
         cfg[key] = parseInt(v);
       else cfg[key] = v;
     }

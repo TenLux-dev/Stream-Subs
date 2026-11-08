@@ -27,7 +27,9 @@ import uvicorn
 SR = 16000          # sample rate / частота дискретизации
 BLK = 512           # block size / размер блока
 MIN_SEC = 0.8       # minimum speech length / минимальная длина речи
-MODEL = "medium"    # "tiny"|"base"|"small"|"medium"|"large-v3"
+import os as _os
+MODEL = _os.environ.get("STREAMSUBS_MODEL", "medium")    # tiny|base|small|medium|large-v3
+COMPUTE_OVERRIDE = _os.environ.get("STREAMSUBS_COMPUTE", "")  # float16|int8|int8_float16
 
 # ------------------------------------------------------------
 #  Server / Сервер
@@ -67,6 +69,7 @@ DEFAULT_CONFIG = {
     "timeout": 6000,                                   # ms after last chunk / мс
     "maxChars": 80,                                    # split into chunks / символов в куске
     "chunkTime": 2500,                                 # ms per chunk / мс на кусок
+    "historyLines": 1,                                 # previous lines visible / прошлых строк
     "textShadow": "0 0 8px #000, 0 0 4px #000, 2px 2px 4px #000",
     "testBackground": "transparent",                   # for preview / для предпросмотра
 }
