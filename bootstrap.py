@@ -12,6 +12,7 @@ import shutil
 import json
 import time
 import urllib.request
+import re
 from pathlib import Path
 
 # Включаем ANSI цвета в Windows console
@@ -41,6 +42,41 @@ CHECK = f"{GREEN}✓{RESET}"
 CROSS = f"{RED}✗{RESET}"
 WARN = f"{YELLOW}⚠️{RESET}"
 ARROW = f"{CYAN}→{RESET}"
+# ------------------------------------------------------------
+#  Progress bar / красивый прогресс-бар
+# ------------------------------------------------------------
+BAR_FILL = "\033[48;5;205m"   # pink/magenta fill
+BAR_EMPTY = "\033[48;5;28m"   # dark green empty
+BAR_WIDTH = 26
+
+
+def to_mb(value, unit):
+    unit = (unit or "").upper()
+    if unit == "GB":
+        return value * 1024.0
+    if unit == "KB":
+        return value / 1024.0
+    return value
+
+
+def human_mb(value):
+    if value is None:
+        return "?"
+    return f"{value:.1f} MB"
+
+
+def render_bar(done, total, extra=""):
+    """Draw a single-line bar: pink fill on green track."""
+    if not total or total <= 0:
+        return
+    frac = max(0.0, min(1.0, done / total))
+    filled = int(frac * BAR_WIDTH)
+    bar = BAR_FILL + (" " * filled) + RESET + BAR_EMPTY + (" " * (BAR_WIDTH - filled)) + RESET
+    pct = int(frac * 100)
+    line = f"\r  {bar} {WHITE}{pct:3d}%{RESET}  {DIM}{human_mb(done)} / {human_mb(total)}{RESET}"
+    if extra:
+        line += f"  {extra}"
+    print(line, end="", flush=True)
 
 # ------------------------------------------------------------
 #  Paths / Пути
@@ -167,29 +203,50 @@ def install_package(pkg, index=1, total=1):
         [PYTHON, "-m", "pip", "install", "--progress-bar", "on", pkg],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        encoding="utf-8",
-        errors="replace",
+        bufsize=0,
     )
 
-    last_print = 0
-    for line in proc.stdout:
-        line = line.rstrip("\r\n")
-        if not line:
-            continue
-        if "\r" in line:
-            line = line.split("\r")[-1]
-        if any(k in line for k in ("Collecting ", "Downloading ",
-                                    "Installing ", "Using cached",
-                                    "Successfully installed",
-                                    "Requirement already satisfied")):
-            now = time.time()
-            if now - last_print > 0.5 or "Successfully" in line or "Installing collected" in line:
-                print(f"     {DIM}{line}{RESET}")
-                last_print = now
+    buf = ""
+    cur_total = None
+    cur_done = 0.0
+
+    def on_seg(seg):
+        nonlocal cur_total, cur_done
+        seg = seg.strip()
+        if not seg:
+            return
+        m = re.search(r"Downloading (\S+) \(([\d.]+) (MB|kB|GB)\)", seg)
+        if m:
+            cur_total = to_mb(float(m.group(2)), m.group(3))
+            cur_done = 0.0
+            return
+        m = re.search(r"([\d.]+)/([\d.]+) (MB|kB|GB)", seg)
+        if m:
+            cur_done = to_mb(float(m.group(1)), m.group(3))
+            tot = to_mb(float(m.group(2)), m.group(3))
+            speed = re.search(r"([\d.]+) (MB|kB)/s", seg)
+            eta = re.search(r"eta (\S+)", seg)
+            extra = ((speed.group(0) if speed else "") + "  " +
+                     ("ETA " + eta.group(1) if eta else "")).strip()
+            render_bar(cur_done, tot, extra)
+            return
+        if ("Collecting " in seg or "Installing " in seg or
+                "Successfully installed" in seg or "Using cached" in seg):
+            print(f"\r     {DIM}{seg[:110]}{RESET}")
+
+    while True:
+        chunk = proc.stdout.read(256)
+        if not chunk:
+            break
+        buf += chunk.decode("utf-8", "replace")
+        parts = re.split(r"[\r\n]", buf)
+        buf = parts.pop()
+        for seg in parts:
+            on_seg(seg)
+    on_seg(buf)
 
     proc.wait()
+    print()
     if proc.returncode != 0:
         print(f"  {WARN}  pip завершился с кодом {proc.returncode}")
 
