@@ -57,37 +57,7 @@ BAR_EMPTY = "\033[48;5;28m"   # dark green empty
 BAR_WIDTH = 26
 
 
-def to_mb(value, unit):
-    unit = (unit or "").upper()
-    if unit == "GB":
-        return value * 1024.0
-    if unit == "KB":
-        return value / 1024.0
-    return value
 
-
-def human_mb(value):
-    if value is None:
-        return "?"
-    return f"{value:.1f} MB"
-
-
-def render_bar(done, total, extra=""):
-    """Draw a single-line bar: pink fill on green track."""
-    if not total or total <= 0:
-        return
-    frac = max(0.0, min(1.0, done / total))
-    filled = int(frac * BAR_WIDTH)
-    bar = BAR_FILL + (" " * filled) + RESET + BAR_EMPTY + (" " * (BAR_WIDTH - filled)) + RESET
-    pct = int(frac * 100)
-    line = f"\r  {bar} {WHITE}{pct:3d}%{RESET}  {DIM}{human_mb(done)} / {human_mb(total)}{RESET}"
-    if extra:
-        line += f"  {extra}"
-    print(line, end="", flush=True)
-
-# ------------------------------------------------------------
-#  Paths / Пути
-# ------------------------------------------------------------
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).parent
 else:
@@ -119,11 +89,6 @@ CUDA_PACKAGES = [
 ]
 
 START_TIME = time.time()
-
-
-# ------------------------------------------------------------
-#  Helpers / Вспомогательные функции
-# ------------------------------------------------------------
 
 def elapsed():
     sec = int(time.time() - START_TIME)
@@ -198,9 +163,40 @@ def get_python_executable():
 PYTHON = get_python_executable()
 
 
-# ------------------------------------------------------------
-#  pip install with live output / pip с живым выводом
-# ------------------------------------------------------------
+def to_mb(value, unit):
+    unit = (unit or "").upper()
+    if unit == "GB":
+        return value * 1024.0
+    if unit == "KB":
+        return value / 1024.0
+    return value
+
+
+def human_mb(value):
+    if value is None:
+        return "?"
+    return f"{value:.1f} MB"
+
+
+def render_bar(done, total, extra=""):
+    """Draw a single-line bar: pink fill on green track, adapts to console width."""
+    if not total or total <= 0:
+        return
+    import shutil
+    try:
+        term_w = shutil.get_terminal_size((100, 24)).columns
+    except Exception:
+        term_w = 100
+    width = max(12, min(34, term_w - 64))
+    frac = max(0.0, min(1.0, done / total))
+    filled = int(frac * width)
+    bar = BAR_FILL + (" " * filled) + RESET + BAR_EMPTY + (" " * (width - filled)) + RESET
+    pct = int(frac * 100)
+    line = f"\r  {bar} {WHITE}{pct:3d}%{RESET}  {DIM}{human_mb(done):>9} / {human_mb(total):>9}{RESET}"
+    if extra:
+        line += f"  {extra}"
+    print(line, end="", flush=True)
+
 
 def _norm_name(name):
     return (name or "").lower().replace("-", "_").replace(".", "_")
@@ -490,15 +486,18 @@ def download_models():
 
 def bar_demo():
     """Show the progress bar without installing anything (dev/demo)."""
+    print_banner()
+    print(f"  {DIM}Demo / демо: imitated package download{RESET}")
+    print()
     total = 120.0
     import math
     for i in range(0, 121):
         done = total * i / 120.0
         speed = 6.6 + 1.2 * math.sin(i / 8.0)
         eta = 0 if i >= 120 else int((total - done) / max(speed, 0.1))
-        render_bar(done, total, f"{speed:.1f} MB/s  ETA 0:{eta:02d}")
+        render_bar(done, total, f"{speed:4.1f} MB/s  ETA 0:{eta:02d}  [{elapsed()}]")
         time.sleep(0.03)
-    print()
+    print(f"\n  {CHECK} Demo finished / демо завершено")
 
 
 def main():
