@@ -423,6 +423,58 @@ def is_hallucination(text):
     return False
 
 
+def dedupe_loops(text):
+    """Collapse Whisper repetition loops / схлопываем циклы повторов.
+
+    Whisper на шуме любит выдавать одну и ту же фразу десятки раз
+    ("the driver went to heaven" x14). Убираем подряд идущие дубли
+    предложений и повторяющиеся куски фраз, режем абсурдно длинный текст.
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+
+    # 1) collapse consecutive duplicate sentences
+    parts = re.split(r'(?<=[.!?])\s+', t)
+    out = []
+    prev = None
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        norm = re.sub(r'\s+', ' ', p.lower().strip(' .,!?…'))
+        if prev is not None and norm == prev:
+            continue
+        out.append(p)
+        prev = norm
+    t = ' '.join(out).strip()
+
+    # 2) collapse any repeated run of words (longest match first)
+    words = t.split()
+    i = 0
+    while i < len(words):
+        collapsed = False
+        maxp = min(12, (len(words) - i) // 2)
+        for p in range(maxp, 1, -1):
+            reps = 1
+            j = i + p
+            while j + p <= len(words) and words[j:j + p] == words[i:i + p]:
+                reps += 1
+                j += p
+            if reps >= 2:
+                del words[i + p:j]
+                collapsed = True
+                break
+        if collapsed:
+            continue
+        i += 1
+
+    # 3) hard cap: nothing sane is longer than ~60 words
+    if len(words) > 60:
+        words = words[:60]
+    return ' '.join(words)
+
+
 def log_event(kind, text, sec=None, dt=None):
     """Append to whisper_log.txt / пишем в лог."""
     try:
@@ -637,15 +689,19 @@ def audio_loop():
                             log_event("EMPTY", "", sec, dt)
                         else:
                             fixed = fix_slang(txt)
-                            if is_hallucination(fixed):
+                            deduped = dedupe_loops(fixed)
+                            if deduped != fixed:
+                                log_event("DEDUP", txt, sec, dt)
+                                print("[DEDUP] " + repr(fixed) + " -> " + repr(deduped))
+                            if not deduped or is_hallucination(deduped):
                                 log_event("FILTERED", txt, sec, dt)
                                 print("[FILTERED] " + repr(txt))
                             else:
-                                log_event("OK", fixed, sec, dt)
+                                log_event("OK", deduped, sec, dt)
                                 print("[OK] " + str(round(sec, 2))
                                       + "s, whisper " + str(round(dt, 2)) + "s")
-                                print("   -> " + fixed)
-                                broadcast(fixed)
+                                print("   -> " + deduped)
+                                broadcast(deduped)
                     buf = []
 
 
