@@ -1,7 +1,7 @@
 [Setup]
 AppComments=При первом запуске потребуется скачать ~4 ГБ. On first launch about 4 GB will be downloaded.
 AppName=Stream Subs
-AppVersion=1.0.0
+AppVersion=1.0.1
 AppPublisher=CJDARKLORD
 AppPublisherURL=https://github.com/CJDARKLORD/Stream-Subs
 DefaultDirName={autopf}\StreamSubs
