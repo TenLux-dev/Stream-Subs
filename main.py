@@ -20,6 +20,7 @@ from faster_whisper import WhisperModel
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import FileResponse
 import uvicorn
+import requests
 
 # ------------------------------------------------------------
 #  Audio / Аудио
@@ -36,6 +37,65 @@ COMPUTE_OVERRIDE = _os.environ.get("STREAMSUBS_COMPUTE", "")  # float16|int8|int
 # ------------------------------------------------------------
 HOST = "127.0.0.1"
 PORT = 8000
+
+# ------------------------------------------------------------
+#  Version / Версия и проверка обновлений
+# ------------------------------------------------------------
+APP_VERSION = "1.1.0"
+GITHUB_REPO = "TenLux-dev/Stream-Subs"
+GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+UPDATE_TIMEOUT = 8
+_update_cache = {"checked": False, "result": None}
+
+
+def _version_tuple(v):
+    parts = []
+    for chunk in str(v).strip().lstrip("vV").split("."):
+        num = ""
+        for ch in chunk:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        parts.append(int(num) if num else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def check_update(force=False):
+    """Проверка новой версии на GitHub. Возвращает dict или None при ошибке сети."""
+    if _update_cache["checked"] and not force:
+        return _update_cache["result"]
+    info = None
+    try:
+        resp = requests.get(
+            GITHUB_RELEASES_API,
+            timeout=UPDATE_TIMEOUT,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": f"StreamSubs/{APP_VERSION}"},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            latest = (data.get("tag_name") or "").strip()
+            if latest:
+                has_update = _version_tuple(latest) > _version_tuple(APP_VERSION)
+                info = {
+                    "current": APP_VERSION,
+                    "latest": latest.lstrip("vV"),
+                    "hasUpdate": has_update,
+                    "url": data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases",
+                    "publishedAt": data.get("published_at"),
+                }
+                if has_update:
+                    print(f"[UPDATE] Доступна новая версия {latest} (текущая {APP_VERSION}): {info['url']}")
+                    print(f"[UPDATE] New version {latest} available (current {APP_VERSION})")
+    except Exception as exc:
+        print(f"[UPDATE] Не удалось проверить обновления: {exc}")
+        info = None
+    _update_cache["checked"] = True
+    _update_cache["result"] = info
+    return info
+
 
 # ------------------------------------------------------------
 #  Paths / Пути
@@ -515,6 +575,12 @@ def save_config(cfg):
 # ============================================================
 
 app = FastAPI()
+
+
+@app.get("/api/update")
+def api_update():
+    """Информация о доступном обновлении / update info."""
+    return {"current": APP_VERSION, "update": check_update(force=True)}
 clients = set()
 loop_ref = {"loop": None}
 
@@ -711,6 +777,9 @@ def audio_loop():
 
 def main():
     ensure_lists()
+
+    print(f"Stream Subs {APP_VERSION} / Stream Subs версия {APP_VERSION}")
+    threading.Thread(target=check_update, daemon=True).start()
 
     config = uvicorn.Config(app, host=HOST, port=PORT,
                             log_level="warning", ws="auto")

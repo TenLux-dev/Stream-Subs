@@ -88,6 +88,11 @@ CUDA_PACKAGES = [
     "nvidia-cuda-nvrtc-cu12",
 ]
 
+# Installation variant / Вариант установки: "gpu" (default) or "cpu"
+# Устанавливается флагом --cpu или переменной окружения STREAMSUBS_VARIANT=cpu.
+VARIANT = "cpu" if ("--cpu" in sys.argv or os.environ.get("STREAMSUBS_VARIANT", "").lower() == "cpu") else "gpu"
+CPU_TORCH_INDEX = "https://download.pytorch.org/whl/cpu"
+
 START_TIME = time.time()
 
 def elapsed():
@@ -270,15 +275,20 @@ def report_sizes(pkg):
             pass
 
 
-def install_package(pkg, index=1, total=1):
+def install_package(pkg, index=1, total=1, extra_args=None):
     print()
     print(f"  {YELLOW}📦 [{index}/{total}]{RESET} {BOLD}{pkg}{RESET}")
 
     sizes = report_sizes(pkg)
     total_mb = (sum(sizes.values()) / 1048576.0) if sizes else 0.0
 
+    pip_cmd = [PYTHON, "-m", "pip", "install", "--progress-bar", "on"]
+    if extra_args:
+        pip_cmd.extend(extra_args)
+    pip_cmd.append(pkg)
+
     proc = subprocess.Popen(
-        [PYTHON, "-m", "pip", "install", "--progress-bar", "on", pkg],
+        pip_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         bufsize=0,
@@ -358,12 +368,21 @@ def check_and_install_packages():
             capture_output=True,
         )
         if result.returncode != 0:
-            install_package(pkg, i, total)
+            if pkg == "torch" and VARIANT == "cpu":
+                install_package(pkg, i, total, extra_args=["--index-url", CPU_TORCH_INDEX])
+            else:
+                install_package(pkg, i, total)
         else:
             print(f"  {CHECK} [{i}/{total}] {DIM}{pkg} — уже установлен{RESET}")
 
 
 def check_and_install_cuda():
+    if VARIANT == "cpu":
+        print_section("[2/4] CUDA libraries / CUDA-библиотеки")
+        print(f"  {DIM}CPU-вариант: CUDA-библиотеки не нужны — пропускаем.{RESET}")
+        print(f"  {DIM}CPU build: CUDA libraries are not required — skipped.{RESET}")
+        return
+
     print_section("[2/4] CUDA libraries / CUDA-библиотеки")
 
     result = subprocess.run(

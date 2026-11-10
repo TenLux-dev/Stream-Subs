@@ -1,7 +1,7 @@
 [Setup]
 AppComments=При первом запуске потребуется скачать ~4 ГБ. On first launch about 4 GB will be downloaded.
 AppName=Stream Subs
-AppVersion=1.0.1
+AppVersion=1.1.0
 AppPublisher=CJDARKLORD
 AppPublisherURL=https://github.com/CJDARKLORD/Stream-Subs
 DefaultDirName={autopf}\StreamSubs
@@ -39,7 +39,7 @@ Name: "{group}\Uninstall Stream Subs"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Stream Subs"; Filename: "{app}\StreamSubs.exe"; IconFilename: "{app}\app.ico"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\StreamSubs.exe"; Description: "Launch Stream Subs / Запустить Stream Subs"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\StreamSubs.exe"; Parameters: "--gpu"; Description: "Launch Stream Subs / Запустить Stream Subs"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\models"
