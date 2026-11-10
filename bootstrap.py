@@ -79,7 +79,17 @@ REQUIRED_PACKAGES = [
     "uvicorn[standard]",
     "websockets",
     "numpy",
+    # Desktop wrapper / настольная обёртка (desktop.py)
+    "pywebview",
+    "pystray",
+    "pillow",
 ]
+
+# Package name -> import name where they differ / где имя пакета != модуля
+PACKAGE_IMPORTS = {
+    "pywebview": "webview",
+    "pillow": "PIL",
+}
 
 CUDA_PACKAGES = [
     "nvidia-cublas-cu12",
@@ -92,6 +102,10 @@ CUDA_PACKAGES = [
 # Устанавливается флагом --cpu или переменной окружения STREAMSUBS_VARIANT=cpu.
 VARIANT = "cpu" if ("--cpu" in sys.argv or os.environ.get("STREAMSUBS_VARIANT", "").lower() == "cpu") else "gpu"
 CPU_TORCH_INDEX = "https://download.pytorch.org/whl/cpu"
+
+# Desktop mode / Настольный режим: --desktop opens desktop.py (window + tray)
+# instead of the bare main.py server. Added by the installer shortcuts.
+DESKTOP_MODE = "--desktop" in sys.argv
 
 START_TIME = time.time()
 
@@ -362,7 +376,7 @@ def check_and_install_packages():
     print_section("[1/4] Installing Python packages / Установка Python-пакетов")
     total = len(REQUIRED_PACKAGES)
     for i, pkg in enumerate(REQUIRED_PACKAGES, 1):
-        module_name = pkg.split("[")[0].replace("-", "_")
+        module_name = PACKAGE_IMPORTS.get(pkg, pkg.split("[")[0].replace("-", "_"))
         result = subprocess.run(
             [PYTHON, "-c", f"import {module_name}"],
             capture_output=True,
@@ -590,14 +604,19 @@ def main():
     print()
     print(f"  {DIM}Общее время / Total time:{RESET} {GREEN}{elapsed()}{RESET}")
     print()
-    print(f"  🚀 {BOLD}Запускаю Stream Subs / Starting Stream Subs...{RESET}")
-    print()
-    print(f"  {DIM}После запуска откройте в браузере / After launch open in browser:{RESET}")
-    print(f"     {CYAN}http://127.0.0.1:8000{RESET}         {DIM}— субтитры / subtitles{RESET}")
-    print(f"     {CYAN}http://127.0.0.1:8000/settings{RESET} {DIM}— настройки / settings{RESET}")
-    print()
-    print(f"  {DIM}Для остановки нажмите Ctrl+C в этом окне.{RESET}")
-    print(f"  {DIM}To stop press Ctrl+C in this window.{RESET}")
+    if DESKTOP_MODE:
+        print(f"  🖥️  {BOLD}Запускаю настольное окно Stream Subs / Starting desktop app...{RESET}")
+        print(f"  {DIM}Окно настроек + иконка в трее. Выход — через меню трея.{RESET}")
+        print(f"  {DIM}Settings window + tray icon. Quit from the tray menu.{RESET}")
+    else:
+        print(f"  🚀 {BOLD}Запускаю Stream Subs / Starting Stream Subs...{RESET}")
+        print()
+        print(f"  {DIM}После запуска откройте в браузере / After launch open in browser:{RESET}")
+        print(f"     {CYAN}http://127.0.0.1:8000{RESET}         {DIM}— субтитры / subtitles{RESET}")
+        print(f"     {CYAN}http://127.0.0.1:8000/settings{RESET} {DIM}— настройки / settings{RESET}")
+        print()
+        print(f"  {DIM}Для остановки нажмите Ctrl+C в этом окне.{RESET}")
+        print(f"  {DIM}To stop press Ctrl+C in this window.{RESET}")
     print()
 
     main_py = BASE_DIR / "main.py"
@@ -606,10 +625,27 @@ def main():
         if candidate.exists():
             main_py = candidate
 
+    desktop_py = BASE_DIR / "desktop.py"
+    if hasattr(sys, "_MEIPASS"):
+        candidate = Path(sys._MEIPASS) / "desktop.py"
+        if candidate.exists():
+            desktop_py = candidate
+
     env = os.environ.copy()
     env["STREAMSUBS_BASE_DIR"] = str(BASE_DIR)
+    env["STREAMSUBS_PYTHON"] = PYTHON
     os.chdir(str(BASE_DIR))
-    subprocess.run([PYTHON, str(main_py)], env=env)
+
+    if DESKTOP_MODE and desktop_py.exists():
+        # desktop.py starts main.py itself and owns the server process.
+        # desktop.py сам запускает main.py и владеет процессом сервера.
+        env["STREAMSUBS_MAIN"] = str(main_py)
+        print(f"  {DIM}desktop.py:{RESET} {CYAN}{desktop_py}{RESET}")
+        subprocess.run([PYTHON, str(desktop_py)], env=env)
+    else:
+        if DESKTOP_MODE:
+            print(f"  {WARN}  desktop.py не найден / not found — запускаю main.py в браузере")
+        subprocess.run([PYTHON, str(main_py)], env=env)
 
 
 if __name__ == "__main__":

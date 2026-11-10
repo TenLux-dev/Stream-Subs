@@ -79,6 +79,25 @@
   }
   .hint { font-size: 11px; color: #666; margin-top: 4px; }
 
+  /* Autostart switch / переключатель автозапуска */
+  .switch-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; background: #1e1e1e;
+    border: 1px solid #3c3c3c; border-radius: 4px; cursor: pointer;
+  }
+  .switch-row:hover { border-color: #4a4a4a; }
+  .switch-row input[type="checkbox"] {
+    flex: 0 0 auto; width: 16px; height: 16px; margin: 1px 0 0 0;
+    accent-color: #007acc; cursor: pointer;
+  }
+  .switch-row .switch-text { font-size: 12px; color: #ccc; line-height: 1.5; }
+  .switch-row .hint { margin-top: 3px; }
+  .autostart-status {
+    min-height: 15px; margin-top: 6px; font-size: 11px;
+    line-height: 1.4; color: #4ec9b0; word-break: break-word;
+  }
+  .autostart-status.error { color: #f48771; }
+
   .url-box {
     background: #1e1e1e; padding: 8px 10px;
     border: 1px solid #3c3c3c; border-radius: 4px;
@@ -183,12 +202,12 @@
   <div class="row">
     <label>Время одного куска, мс / Time per chunk, ms</label>
     <input id="chunkTime" type="number" min="800" max="10000" step="100">
+  </div>
 
   <div class="row">
     <label>Прошлые строки / Previous lines (0-3)</label>
     <input id="historyLines" type="number" min="0" max="3" step="1">
     <div class="hint">Сколько предыдущих строк держать над текущей / How many previous lines to keep above the current one</div>
-  </div>
   </div>
 
   <!-- =================================================== -->
@@ -211,6 +230,22 @@
       <option value="#4a2a3a">Красный / Red</option>
       <option value="#ffffff">Белый / White</option>
     </select>
+  </div>
+
+  <!-- =================================================== -->
+  <!--  System / Система — автозапуск                       -->
+  <!-- =================================================== -->
+  <h2>Система / System</h2>
+
+  <div class="row">
+    <label class="switch-row" for="autostart">
+      <input type="checkbox" id="autostart">
+      <span class="switch-text">
+        Запускать с Windows / Start with Windows
+        <span class="hint" id="autostartHint">Добавляет Stream Subs в автозапуск Windows (--desktop).</span>
+      </span>
+    </label>
+    <p class="autostart-status" id="autostartStatus" role="status" aria-live="polite"></p>
   </div>
 
   <!-- =================================================== -->
@@ -356,6 +391,61 @@
     $('status').textContent = '✓ Сброшено / Reset';
     setTimeout(() => $('status').textContent = '', 2000);
   });
+
+  // --------------------------------------------------------
+  //  Autostart / Автозапуск (HKCU\...\Run)
+  // --------------------------------------------------------
+  async function loadAutostart() {
+    const box = $('autostart');
+    const hint = $('autostartHint');
+    const status = $('autostartStatus');
+    try {
+      const r = await fetch('/api/autostart');
+      const j = await r.json();
+      box.checked = !!j.enabled;
+      if (!j.supported) {
+        box.disabled = true;
+        hint.textContent = 'Автозапуск доступен в установленной версии / Available in the installed build.';
+      } else if (j.target) {
+        hint.title = j.target;  // полный путь — в подсказке / full path in tooltip
+      }
+      if (j.error) {
+        status.textContent = '⚠ ' + j.error;
+        status.classList.add('error');
+      }
+    } catch (e) {
+      box.disabled = true;
+      hint.textContent = 'Автозапуск недоступен / Autostart unavailable in browser mode.';
+      status.textContent = '⚠ ' + e.message;
+      status.classList.add('error');
+    }
+  }
+
+  $('autostart').addEventListener('change', async () => {
+    const box = $('autostart');
+    const status = $('autostartStatus');
+    const wanted = box.checked;
+    try {
+      const r = await fetch('/api/autostart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: wanted }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      box.checked = !!j.enabled;
+      status.textContent = '✓ ' + (j.enabled
+        ? 'Автозапуск включён / enabled'
+        : 'Автозапуск выключен / disabled');
+      status.classList.remove('error');
+    } catch (e) {
+      box.checked = !wanted;  // revert / откат
+      status.textContent = '⚠ ' + e.message;
+      status.classList.add('error');
+    }
+  });
+
+  loadAutostart();
 
   // --------------------------------------------------------
   //  Initial load / первичная загрузка

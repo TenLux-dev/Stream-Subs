@@ -7,3 +7,7 @@ uvicorn[standard]
 websockets
 requests
 tqdm
+# Desktop wrapper / настольная обёртка (desktop.py)
+pywebview>=5.0
+pystray>=0.19.5
+pillow>=10.0

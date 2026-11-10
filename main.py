@@ -18,7 +18,7 @@ import ctranslate2
 from silero_vad import load_silero_vad, VADIterator
 from faster_whisper import WhisperModel
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 import requests
 
@@ -41,7 +41,7 @@ PORT = 8000
 # ------------------------------------------------------------
 #  Version / Версия и проверка обновлений
 # ------------------------------------------------------------
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 GITHUB_REPO = "TenLux-dev/Stream-Subs"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_TIMEOUT = 8
@@ -114,6 +114,84 @@ else:
 CONFIG_PATH = BASE_DIR / "config.json"
 LOG_PATH = BASE_DIR / "whisper_log.txt"
 LISTS_DIR = BASE_DIR / "lists"
+
+# ------------------------------------------------------------
+#  Autostart / Автозапуск (Windows, HKCU\...\Run)
+# ------------------------------------------------------------
+AUTOSTART_NAME = "StreamSubs"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def autostart_command():
+    """Команда для HKCU\\...\\Run или None, если автозапуск невозможен.
+
+    Установленная версия: "<install dir>\\StreamSubs.exe" --desktop.
+    Dev-запуск: pythonw.exe desktop.py --desktop (чтобы автозапуск тоже
+    открывал настольное окно, а не голый сервер).
+    Installed build: '<install dir>\\StreamSubs.exe' --desktop.
+    Dev run: pythonw desktop.py --desktop.
+    """
+    exe = BASE_DIR / "StreamSubs.exe"
+    if exe.exists():
+        return f'"{exe}" --desktop'
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}" --desktop'
+    desktop = BASE_DIR / "desktop.py"
+    if desktop.exists():
+        py = Path(sys.executable)
+        pyw = py.with_name("pythonw.exe")
+        if pyw.exists():
+            py = pyw
+        return f'"{py}" "{desktop}" --desktop'
+    return None
+
+
+def autostart_read():
+    """Прочитать текущее значение Run. Возвращает (value, error)."""
+    try:
+        import winreg
+    except ImportError:
+        return None, "Windows registry is not available"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ)
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, str(exc)
+    try:
+        value, _ = winreg.QueryValueEx(key, AUTOSTART_NAME)
+        return value, None
+    except FileNotFoundError:
+        return None, None
+    except OSError as exc:
+        return None, str(exc)
+    finally:
+        key.Close()
+
+
+def autostart_write(command):
+    """Включить автозапуск / enable autostart."""
+    import winreg
+    key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    try:
+        winreg.SetValueEx(key, AUTOSTART_NAME, 0, winreg.REG_SZ, command)
+    finally:
+        key.Close()
+
+
+def autostart_delete():
+    """Выключить автозапуск / disable autostart."""
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    except (ImportError, FileNotFoundError):
+        return
+    try:
+        winreg.DeleteValue(key, AUTOSTART_NAME)
+    except FileNotFoundError:
+        pass
+    finally:
+        key.Close()
 
 # ------------------------------------------------------------
 #  Default appearance config / Настройки внешнего вида по умолчанию
@@ -577,6 +655,14 @@ def save_config(cfg):
 app = FastAPI()
 
 
+# Global pause flag / Глобальный флаг паузы.
+# Tray menu and /api/pause set it; audio_loop reads it and, while paused,
+# skips transcription and never broadcasts subtitles. Toggle via the tray.
+# Трей и /api/pause переключают флаг; audio_loop при паузе пропускает
+# распознавание и не отправляет субтитры. Переключение — из трея.
+PAUSED = False
+
+
 @app.get("/api/update")
 def api_update():
     """Информация о доступном обновлении / update info."""
@@ -615,6 +701,101 @@ async def post_config(request: Request):
 async def reset_config():
     save_config(DEFAULT_CONFIG)
     return {"ok": True, "config": DEFAULT_CONFIG}
+
+
+# ------------------------------------------------------------
+#  Pause / Пауза — управление из трея и API
+# ------------------------------------------------------------
+
+@app.get("/api/pause")
+def api_pause_get():
+    """Текущее состояние паузы / current pause state."""
+    return {"paused": PAUSED}
+
+
+@app.post("/api/pause")
+def api_pause_set():
+    """Поставить субтитры на паузу / pause subtitles."""
+    global PAUSED
+    PAUSED = True
+    print("[PAUSE] Распознавание приостановлено / subtitles paused")
+    return {"paused": PAUSED, "ok": True}
+
+
+@app.post("/api/resume")
+def api_resume_set():
+    """Снять паузу / resume subtitles."""
+    global PAUSED
+    PAUSED = False
+    print("[PAUSE] Распознавание продолжено / subtitles resumed")
+    return {"paused": PAUSED, "ok": True}
+
+
+# ------------------------------------------------------------
+#  Autostart / Автозапуск — настройки и HKCU\...\Run
+# ------------------------------------------------------------
+
+@app.get("/api/autostart")
+def api_autostart_get():
+    """Состояние автозапуска / autostart state."""
+    current, read_error = autostart_read()
+    target = autostart_command()
+    return {
+        "enabled": bool(current),
+        "command": current,
+        "target": target,
+        "supported": target is not None,
+        "error": read_error,
+    }
+
+
+@app.post("/api/autostart")
+async def api_autostart_set(request: Request):
+    """Включить/выключить автозапуск / toggle autostart.
+
+    Body: {"enabled": true|false}. Без поля enabled — переключить.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    current, _ = autostart_read()
+    enabled = data.get("enabled")
+    if enabled is None:
+        enabled = not bool(current)
+    enabled = bool(enabled)
+
+    if enabled:
+        command = autostart_command()
+        if not command:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "enabled": bool(current),
+                    "error": "Автозапуск доступен только в установленной версии Windows / "
+                             "Autostart is available only in the installed Windows build.",
+                },
+                status_code=409,
+            )
+        try:
+            autostart_write(command)
+        except Exception as exc:
+            return JSONResponse(
+                {"ok": False, "enabled": bool(current), "error": str(exc)},
+                status_code=500,
+            )
+        print("[AUTOSTART] Включён / enabled: " + command)
+        return {"ok": True, "enabled": True, "command": command}
+
+    try:
+        autostart_delete()
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "enabled": bool(current), "error": str(exc)},
+            status_code=500,
+        )
+    print("[AUTOSTART] Выключен / disabled")
+    return {"ok": True, "enabled": False, "command": None}
 
 
 @app.get("/api/lists/stats")
@@ -747,6 +928,13 @@ def audio_loop():
                     sec = len(audio) / SR
                     if sec < MIN_SEC:
                         pass  # too short / слишком коротко
+                    elif PAUSED:
+                        # Pause mode: skip recognition entirely to save GPU/CPU
+                        # and never broadcast subtitles while paused.
+                        # Режим паузы: пропускаем распознавание целиком (экономия
+                        # GPU/CPU) и ничего не отправляем в оверлей, пока пауза.
+                        log_event("PAUSED", "", sec)
+                        print("[PAUSED] пропуск / skipped " + str(round(sec, 2)) + "s")
                     else:
                         t0 = time.time()
                         txt = transcribe(whisper, audio)
